@@ -1,0 +1,73 @@
+package com.irs.signals.block;
+
+import com.irs.signals.IRSMod;
+import com.irs.signals.SignalAspect;
+import com.irs.signals.blockentity.SignalBlockEntity;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+
+/**
+ * 三灯信号机方块。
+ * 拥有两个方块状态属性：
+ *   - ASPECT：当前显示（红/黄/绿），由方块实体根据闭塞逻辑计算后写回。
+ *   - FACING：朝向，决定其“前方闭塞区间”延伸的方向。
+ */
+public class SignalBlock extends BaseEntityBlock {
+    public static final EnumProperty<SignalAspect> ASPECT = EnumProperty.create("aspect", SignalAspect.class);
+    public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+
+    public SignalBlock(Properties properties) {
+        super(properties);
+        registerDefaultState(stateDefinition.any()
+                .setValue(ASPECT, SignalAspect.RED)
+                .setValue(FACING, Direction.NORTH));
+    }
+
+    @Override
+    public RenderShape getRenderShape(BlockState state) {
+        return RenderShape.MODEL;
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(ASPECT, FACING);
+    }
+
+    @Override
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        // 朝向 = 玩家面朝方向，使“前方闭塞区间”沿玩家视线方向延伸。
+        return defaultBlockState().setValue(FACING, ctx.getHorizontalDirection());
+    }
+
+    @Override
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+        return new SignalBlockEntity(pos, state);
+    }
+
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
+        // 仅在服务端进行闭塞逻辑运算；客户端仅依据方块状态渲染灯位。
+        if (level.isClientSide || type != IRSMod.SIGNAL_BE.get()) {
+            return null;
+        }
+        return (lvl, pos, st, be) -> SignalBlockEntity.serverTick(lvl, pos, st, (SignalBlockEntity) be);
+    }
+
+    /** 判断某方块状态是否为本信号机。 */
+    public static boolean isSignal(BlockState state) {
+        return state.getBlock() instanceof SignalBlock;
+    }
+}
